@@ -1,0 +1,18 @@
+{
+  "version": 3,
+  "canvas": { "width": 256, "height": 256 },
+  "palette": {
+    "bg": "#E8F4FF",
+    "mid": "#BFE0FF",
+    "deep": "#D6EBFF",
+    "line": "#4A90D9",
+    "white": "#FFFFFF"
+  },
+  "note": "猫猫素材：每状态一个动图 WebP（type:file）。也支持帧序列：{\"type\":\"frames\",\"dir\":\"frames/idle\",\"ext\":\"png\",\"count\":10,\"fps\":6}。换素材只改本文件 + 放素材文件，不用改代码。",
+  "states": {
+    "idle": { "type": "file", "src": "anim/idle.webp", "fps": 6 },
+    "rise": { "type": "file", "src": "anim/rise.webp", "fps": 8 },
+    "drink": { "type": "file", "src": "anim/drink.webp", "fps": 8 },
+    "sleep": { "type": "file", "src": "anim/sleep.webp", "fps": 4 }
+  }
+}
