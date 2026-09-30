@@ -820,12 +820,19 @@ window.__ModuleLoader__.load({
       const form = props.form;
       const [draft, setDraft] = useState(null);
       const [saved, setSaved] = useState("");
+      const [resetArmed, setResetArmed] = useState(false);
       const [snap, setSnap] = useState(() => (form ? form.getSnapshot() : null));
 
       useEffect(() => {
         if (!form) return undefined;
         setSnap(form.getSnapshot());
-        const off = form.subscribe((next) => setSnap(next));
+        // 注意：store 的 subscribe 回调**不带参数**（只是"内容变了"的通知），
+        // 必须自己再 getSnapshot() 读一次。旧写法 setSnap(next) 会把快照写成 undefined，
+        // 结果保存一按整张卡片全变空 —— 这正是"设置改不回去"的真凶。
+        const off = form.subscribe(() => {
+          const next = form.getSnapshot();
+          if (next && next.value) setSnap(next);
+        });
         return () => {
           if (typeof off === "function") off();
         };
@@ -838,22 +845,76 @@ window.__ModuleLoader__.load({
         return h("div", { className: "nls-note" }, "设置服务未就绪（configForms 缺席），可稍后重开设置页。");
       }
 
+      const allKeys = Array.isArray(snap?.configKeys) && snap.configKeys.length > 0
+        ? snap.configKeys
+        : Object.keys(value);
+
+      /** 一次原子写完（form.mutate = 单个 revision、单个往返）；退化路径才逐字段 set */
+      const applyOps = async (ops) => {
+        if (ops.length === 0) return true;
+        try {
+          if (typeof form.mutate === "function") return (await form.mutate(ops)) !== false;
+          for (const op of ops) {
+            const ok = op.op === "unset" ? await form.unset(op.path[0]) : await form.set(op.path[0], op.value);
+            if (ok === false) return false;
+          }
+          return true;
+        } catch {
+          return false;
+        }
+      };
+
       const save = async () => {
         if (!draft) return;
-        const keys = Object.keys(draft);
-        let ok = true;
-        for (const key of keys) {
-          try {
-            const result = await form.set(key, draft[key]);
-            if (result === false) ok = false;
-          } catch {
-            ok = false;
-          }
+        const ops = Object.keys(draft)
+          .filter((key) => JSON.stringify(draft[key]) !== JSON.stringify((snap?.value ?? {})[key]))
+          .map((key) => ({ op: "set", path: [key], value: draft[key] }));
+        if (ops.length === 0) {
+          setDraft(null);
+          setSaved("没有检测到改动");
+          setTimeout(() => setSaved(""), 2500);
+          return;
         }
-        setSaved(ok ? "已保存并立即生效" : "部分字段保存失败，请检查取值范围");
+        setSaved("保存中…");
+        const ok = await applyOps(ops);
         setDraft(null);
-        setTimeout(() => setSaved(""), 3000);
+        const next = form.getSnapshot();
+        if (next && next.value) setSnap(next);
+        setSaved(ok ? `已保存 ${ops.length} 项，立即生效` : "保存被宿主拒收（多半是取值越界），卡片已回到磁盘上的实际值");
+        setTimeout(() => setSaved(""), 4000);
       };
+
+      /** 一键恢复默认值：把所有字段的"用户覆盖"逐个 unset，回落到 schema 默认值 */
+      const restoreDefaults = async () => {
+        if (!resetArmed) {
+          setResetArmed(true);
+          setSaved("再点一次「确认恢复默认」就会清空所有自定义设置");
+          setTimeout(() => setResetArmed(false), 6000);
+          return;
+        }
+        setResetArmed(false);
+        setSaved("正在恢复默认值…");
+        const ops = allKeys.map((key) => ({ op: "unset", path: [key] }));
+        const ok = await applyOps(ops);
+        setDraft(null);
+        const next = form.getSnapshot();
+        if (next && next.value) setSnap(next);
+        setSaved(ok ? `已恢复默认值（${ops.length} 项）` : "恢复失败：宿主未接受，请重开设置页再试");
+        setTimeout(() => setSaved(""), 5000);
+      };
+
+      /** 调试加速时的一键刹车：只把 timeScale 恢复成默认 1（不影响其它设置） */
+      const stopAcceleration = async () => {
+        setSaved("正在恢复正常速度…");
+        const ok = await applyOps([{ op: "unset", path: ["timeScale"] }]);
+        setDraft(null);
+        const next = form.getSnapshot();
+        if (next && next.value) setSnap(next);
+        setSaved(ok ? "已恢复正常速度（时间缩放回到 1）" : "恢复失败：请重开设置页再试");
+        setTimeout(() => setSaved(""), 4000);
+      };
+
+      const accelerated = Number(value.timeScale) > 0 && Number(value.timeScale) < 1;
 
       const num = (key, label, min, max, step) =>
         h(
@@ -920,6 +981,18 @@ window.__ModuleLoader__.load({
           check("showFloatingPet", "右下角常驻猫猫（可拖动，位置会记住）"),
           check("caseRefreshEnabled", "启动后自动刷新案例库"),
         ),
+        accelerated
+          ? h(
+              "div",
+              { className: "nls-warn", style: { marginTop: 12 } },
+              `调试加速生效中：时间缩放 = ${value.timeScale}，倒计时会比真实时间快得多，提醒会一直弹。`,
+              h(
+                "button",
+                { className: "nls-btn", style: { marginLeft: 10 }, onClick: stopAcceleration },
+                "一键恢复正常速度",
+              ),
+            )
+          : null,
         h(
           "div",
           { className: "nls-btns", style: { justifyContent: "flex-start", marginTop: 12 } },
@@ -946,6 +1019,14 @@ window.__ModuleLoader__.load({
               },
             },
             "立即刷新案例库",
+          ),
+          h(
+            "button",
+            {
+              className: resetArmed ? "nls-btn nls-btn-primary" : "nls-btn",
+              onClick: restoreDefaults,
+            },
+            resetArmed ? "确认恢复默认" : "恢复默认值",
           ),
         ),
         saved ? h("div", { className: "nls-hint" }, saved) : null,
