@@ -1,0 +1,24 @@
+# The `files` field in package.json is the source of truth for what ships.
+# This hardens it against accidental additions.
+
+# dev / test
+tests/
+node_modules/
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+# repo hygiene (not shipped in the package)
+.github/
+.gitattributes
+.editorconfig
+.gitignore
+.npmignore
+CHANGELOG.md
+CONTRIBUTING.md
+docs/
+
+# local scratch
+*.log
+*.tgz
+*.tmp

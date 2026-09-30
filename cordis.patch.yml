@@ -1,0 +1,7 @@
+# dsh-no-long-sit bundle patch：向 web 组合挂载本插件。
+# host 半身（index.mjs）负责权威计时 / 账本 / 案例库 / 只读路由；
+# client 半身（client.js）由 __ModuleLoader__ 挂载，用 shell.overlay 渲染猫猫与弹窗。
+# 行 id 同时是 settings 命名空间（ctx.configForms.get('dsh-no-long-sit')）。
+- insert:
+    - id: dsh-no-long-sit
+      name: dsh-no-long-sit

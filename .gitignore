@@ -1,0 +1,11 @@
+node_modules/
+*.log
+.vscode/
+.idea/
+*.tmp
+*.tgz
+*.bak
+*.bak_*
+docs/images/*.tmp
+package-lock.json
+pnpm-lock.yaml
