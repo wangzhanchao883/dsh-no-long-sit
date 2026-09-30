@@ -11,7 +11,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { buildSchema, normalizeConfig, NS } from './lib/config.mjs'
+import { buildSchema, normalizeConfig, DEFAULTS, NS } from './lib/config.mjs'
 import { createState, tick, choose, snapshot, scaledMs } from './lib/state.mjs'
 import { loadJson, saveJsonAtomic, appendLog, statePath, casesCachePath } from './lib/store.mjs'
 import { loadBuiltin, mergeCases, refreshCases } from './lib/cases.mjs'
@@ -84,22 +84,39 @@ export function apply(ctx, input = {}) {
   let cfgSource = 'entry'
   let cfgRevision = 0
   let settingsService = typeof ctx.get === 'function' ? ctx.get('settings') : undefined
+  let sawRow = false
+  const applyLayer = (layer, source) => {
+    const next = normalizeConfig(layer)
+    if (JSON.stringify(next) !== JSON.stringify(cfg)) {
+      cfg = next
+      cfgRevision += 1
+    }
+    cfgSource = source
+  }
   const syncFromSettings = () => {
     if (!settingsService || typeof settingsService.describe !== 'function') return
     try {
       const rows = settingsService.describe()
       const row = Array.isArray(rows) ? rows.find((it) => it && it.ns === NS) : null
-      if (!row) return
-      const user = row.user && typeof row.user === 'object' ? row.user : null
-      const value = row.value && typeof row.value === 'object' ? row.value : null
-      const layer = user ?? value
-      if (!layer || Object.keys(layer).length === 0) return
-      const next = normalizeConfig({ ...entryCfg, ...layer })
-      if (JSON.stringify(next) !== JSON.stringify(cfg)) {
-        cfg = next
-        cfgRevision += 1
+      if (!row) {
+        // 条目被设置服务整条剪掉 = 用户把所有字段都恢复默认了 → 回落 schema 默认值。
+        // 不这么兜底的话，配置会停在"上一次读到的值"，点了恢复默认值也不生效。
+        if (sawRow) {
+          sawRow = false
+          applyLayer({}, 'default')
+        }
+        return
       }
-      cfgSource = user ? 'user' : 'value'
+      sawRow = true
+      const user = row.user && typeof row.user === 'object' ? row.user : null
+      const effective = row.value && typeof row.value === 'object' ? row.value : null
+      const userKeys = user ? Object.keys(user).length : 0
+      const layer = userKeys > 0 ? user : effective
+      if (!layer || Object.keys(layer).length === 0) {
+        applyLayer({ ...entryCfg }, 'entry')
+        return
+      }
+      applyLayer({ ...entryCfg, ...layer }, userKeys > 0 ? 'user' : 'value')
     } catch {
       /* describe 失败保持现有配置（不阻塞插件） */
     }
@@ -170,6 +187,9 @@ export function apply(ctx, input = {}) {
     caseCount: currentCases().length,
     caseStatus,
     cfgSource,
+    // 给设置卡片的"恢复默认值"用：字段清单与默认值由宿主提供，前端不再抄一份
+    configKeys: Object.keys(DEFAULTS),
+    defaults: { ...DEFAULTS },
     soundEnabled: cfg.soundEnabled,
     soundVolume: cfg.soundVolume,
     petOpacity: cfg.petOpacity,

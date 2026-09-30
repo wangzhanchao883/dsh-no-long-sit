@@ -115,6 +115,11 @@ test('路由注册面 = 5 条绝对路径，且跨源请求被 403 拦下', asyn
   assert.equal(snap.address, '大人')
   assert.equal(snap.focusMinutes, 30)
   assert.equal(snap.enabled, true)
+  // 设置卡片的「恢复默认值」依赖宿主下发字段清单与默认值
+  assert.ok(Array.isArray(snap.configKeys) && snap.configKeys.includes('timeScale'), '快照必须带 configKeys')
+  assert.equal(snap.defaults.timeScale, 1)
+  assert.equal(snap.defaults.focusMinutes, 30)
+  assert.equal(snap.configKeys.length, Object.keys(snap.defaults).length)
 })
 
 test('动作路由：白名单、非法动作、超大 body、状态推进', async (t) => {
