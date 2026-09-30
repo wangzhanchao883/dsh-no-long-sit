@@ -53,6 +53,10 @@ break cycle (3–15 min), snooze interval and cap, chime on/off and volume, pet 
 "come back" timeout, grade thresholds, case refresh, floating pet on/off, and a debug-only
 time scale. Changes take effect within ~2 seconds.
 
+Two safety valves sit in that card: **Restore defaults** (two-step confirm — clears every user
+override in one atomic write and falls back to the schema defaults) and, whenever the debug time
+scale is below 1, a warning banner with a **one-click "back to normal speed"** button.
+
 ## How it works
 
 - **Host half** (`index.mjs` + `lib/`) owns the authoritative timer and the ledger
