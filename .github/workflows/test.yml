@@ -1,0 +1,29 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [22.x, 24.x]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+      # The suite needs exactly one package (`@deepseek-ai/schemastery`, a declared
+      # devDependency) so the config schema can be parsed; everything else is Node
+      # built-ins. No DSH, no browser, no credentials, no network at test time.
+      - name: Install the single dev dependency
+        run: npm install --no-audit --no-fund --no-package-lock
+      - name: Syntax check and unit tests
+        run: |
+          node --version
+          npm run check
