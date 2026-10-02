@@ -28,8 +28,10 @@ too long — more pet capabilities are planned, the reminders are just the begin
 - Three buttons: 【休息好了】starts the next round · 【再等会】shows cases · 【结束】ends the session.
 - When the break countdown finishes it chimes again and asks you to come back; if nobody answers
   within `awaitReturnTimeoutMinutes` (default 10) the next round starts on its own.
-- The case window shows exactly **one sedentary case and one dehydration case** per visit, rotating
-  through a built-in library of 17 entries that each carry a real source URL and date.
+- The case window shows exactly **one sedentary case and one dehydration case** per visit, drawn from a
+  **shuffle bag** over a built-in library of 17 entries (each with a real source URL and date): nothing
+  repeats within a cycle, two consecutive visits never match, and the bag is kept in `localStorage`, so a
+  page refresh or a DSH restart continues where it left off instead of starting over at case #1.
 - The session report gives worked time, completed rounds, successful interruptions, snoozes,
   suggested drinks and a good/mid/bad grade.
 
