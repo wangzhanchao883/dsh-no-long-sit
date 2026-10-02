@@ -1,6 +1,6 @@
 {
   "name": "dsh-no-long-sit",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "description": "[DSH 0.1.7–0.2.x] A cat desktop pet for DeepSeek Harness whose first job is to keep you from sitting too long. The pet lives in the corner, can be dragged anywhere (position remembered), and plays a looping animation per state (idle / getting up / drinking / sleeping). When a focus cycle ends it pops a centered reminder with a triple chime; saying \"later\" shows one real sourced sedentary case and one dehydration case; stopping produces a session report with a good/mid/bad grade. The timer and the ledger live in the host, so refreshing the page never loses state. 猫猫桌宠：先当久坐提醒用——住在右下角、可拖到任意位置并记住位置，四个状态各有循环动画；专注到点居中弹窗 + 三声提示音，点「再等会」掏出 1 条久坐 + 1 条缺水的真实来源案例，结束时给本次工作好/中/差评价。计时与账本都在宿主侧，刷新页面不丢。",
   "keywords": [
