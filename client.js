@@ -127,10 +127,12 @@ window.__ModuleLoader__.load({
         if (res.ok) {
           const data = await res.json();
           publish({ cases: data.cases ?? [], caseStatus: data.status ?? null });
+          return data.cases ?? [];
         }
       } catch {
         /* 案例拿不到就退化成只有伤害说明 */
       }
+      return null;
     }
 
     async function sendAction(action) {
@@ -373,6 +375,75 @@ window.__ModuleLoader__.load({
       }
     }
 
+    /* ---------------- 案例轮换：洗牌袋（一轮内不重复 + 跨重启继续） ----------------
+       旧实现用 `arr[rotation % len]`，而 rotation 是每次页面加载都归零的 state →
+       每次开机打开案例窗都取数组第 0 条（而且刷新出来的新案例恰好排在数组最前），
+       观感就是"永远那两条"。改成洗牌袋：
+         · 每个类目一个队列，洗牌后逐条取出，取空再重洗 → 一轮内绝不重复、相邻必不同；
+         · 队列与"已展示过"的 id 存 localStorage → 重启 DSH / 刷新页面都接着上次继续；
+         · 案例库刷新出来的新条目会被插到队首 → 新案例当天就能看到。 */
+    const CASE_BAG_KEY = "dsh-no-long-sit:case-bag";
+
+    const caseId = (c) => (c && (c.url || c.title)) || "";
+
+    function shuffleInPlace(list) {
+      for (let i = list.length - 1; i > 0; i -= 1) {
+        const j = Math.floor(Math.random() * (i + 1));
+        const tmp = list[i];
+        list[i] = list[j];
+        list[j] = tmp;
+      }
+      return list;
+    }
+
+    function readCaseBag() {
+      try {
+        const raw = localStorage.getItem(CASE_BAG_KEY);
+        const parsed = raw ? JSON.parse(raw) : null;
+        return parsed && typeof parsed === "object" ? parsed : {};
+      } catch {
+        return {};
+      }
+    }
+
+    function writeCaseBag(bag) {
+      try {
+        localStorage.setItem(CASE_BAG_KEY, JSON.stringify(bag));
+      } catch {
+        /* 忽略：存不下就退化成"本轮会话内轮换" */
+      }
+    }
+
+    /** 取某类目的下一条案例（只应在"打开案例窗"那一刻调用一次） */
+    function drawCase(kind, cases) {
+      const list = (cases ?? []).filter((c) => c && c.kind === kind);
+      if (list.length === 0) return null;
+      const ids = list.map(caseId).filter(Boolean);
+      if (ids.length === 0) return list[0];
+
+      const bag = readCaseBag();
+      const seenKey = `${kind}Seen`;
+      const seen = new Set(Array.isArray(bag[seenKey]) ? bag[seenKey].filter((id) => ids.indexOf(id) >= 0) : []);
+      let queue = (Array.isArray(bag[kind]) ? bag[kind] : []).filter((id) => ids.indexOf(id) >= 0);
+      // 案子库里新出现的条目（案例库刷新加进来的）优先插到队首
+      const fresh = shuffleInPlace(ids.filter((id) => queue.indexOf(id) < 0 && !seen.has(id)));
+      if (queue.length === 0 && fresh.length === 0) {
+        seen.clear();
+        queue = shuffleInPlace(ids.slice());
+      }
+      queue = fresh.concat(queue);
+      const picked = queue.shift();
+      seen.add(picked);
+      bag[kind] = queue;
+      bag[seenKey] = seen.size >= ids.length ? [] : Array.from(seen);
+      writeCaseBag(bag);
+      return list.find((c) => caseId(c) === picked) || list[0];
+    }
+
+    function drawCasePair(cases) {
+      return { sit: drawCase("sit", cases), water: drawCase("water", cases) };
+    }
+
     function defaultPetPos() {
       return {
         left: Math.max(8, window.innerWidth - PET_WIDTH - 22),
@@ -611,16 +682,11 @@ window.__ModuleLoader__.load({
 
     /* ---------------- 组件：伤害案例窗 ---------------- */
     function CaseWindow(props) {
-      const { snap, cases, caseStatus, onClose } = props;
-      // 每次只给一条久坐 + 一条缺水；rotation 让多次提醒轮换案例，不至于天天看同一条
-      const pick = (kind) => {
-        const arr = (cases ?? []).filter((c) => c.kind === kind);
-        if (arr.length === 0) return null;
-        const raw = Number(props.rotation) || 0;
-        return arr[((raw % arr.length) + arr.length) % arr.length];
-      };
-      const sit = pick("sit");
-      const water = pick("water");
+      const { snap, cases, caseStatus, pair, onClose } = props;
+      // 这一对是"打开案例窗那一刻"从洗牌袋里抽出来的（见 drawCase）：
+      // 一轮之内不重复、相邻两次必然不同，且跨重启继续，不会每次开机都回到第一条。
+      const sit = pair ? pair.sit : null;
+      const water = pair ? pair.water : null;
       const renderCase = (c, i) =>
         h(
           "div",
@@ -664,7 +730,9 @@ window.__ModuleLoader__.load({
             { className: "nls-hint" },
             caseStatus?.lastError
               ? `案例库上次刷新失败：${caseStatus.lastError}`
-              : `案例库共 ${(cases ?? []).length} 条${caseStatus?.lastSuccessAt ? `，最近更新 ${new Date(caseStatus.lastSuccessAt).toLocaleString()}` : ""}`,
+              : `案例库共 ${(cases ?? []).length} 条（久坐 ${(cases ?? []).filter((c) => c.kind === "sit").length} / 缺水 ${(cases ?? []).filter((c) => c.kind === "water").length}），每次弹窗都会换一对，不会老是同一条${
+                  caseStatus?.lastSuccessAt ? `；最近更新 ${new Date(caseStatus.lastSuccessAt).toLocaleString()}` : ""
+                }`,
           ),
           h(
             "div",
@@ -731,7 +799,7 @@ window.__ModuleLoader__.load({
       const [caseOpen, setCaseOpen] = useState(false);
       const [summaryOpen, setSummaryOpen] = useState(false);
       const [localSnoozeUntil, setLocalSnoozeUntil] = useState(0);
-      const [caseRotation, setCaseRotation] = useState(0);
+      const [casePair, setCasePair] = useState(null);
       const lastPhaseRef = useRef(null);
       const active = Boolean(snap) && snap.phase !== "stopped";
       const now = useNow(active);
@@ -769,8 +837,9 @@ window.__ModuleLoader__.load({
           setLocalSnoozeUntil(Date.now() + snap.snoozeMinutes * 60000 * scale);
           const ok = await sendAction("snooze");
           if (ok) {
-            await fetchCases();
-            setCaseRotation((n) => n + 1);
+            // 抽案例这件事必须"每次打开只做一次"：放进打开动作里，而不是渲染里
+            const fresh = await fetchCases();
+            setCasePair(drawCasePair(fresh ?? caseList ?? []));
             setCaseOpen(true);
           }
           return;
@@ -783,8 +852,8 @@ window.__ModuleLoader__.load({
       };
 
       const openCases = async () => {
-        await fetchCases();
-        setCaseRotation((n) => n + 1);
+        const fresh = await fetchCases();
+        setCasePair(drawCasePair(fresh ?? caseList ?? []));
         setCaseOpen(true);
       };
 
@@ -807,7 +876,7 @@ window.__ModuleLoader__.load({
         reminding
           ? h("div", { className: "nls-mask nls-mask-reminder" }, h(ReminderWindow, { snap, now, onAction: act }))
           : null,
-        caseOpen ? h(CaseWindow, { snap, cases: caseList, caseStatus, rotation: caseRotation, onClose: closeCases }) : null,
+        caseOpen ? h(CaseWindow, { snap, cases: caseList, caseStatus, pair: casePair, onClose: closeCases }) : null,
         summaryOpen && snap.summary ? h(SummaryWindow, { summary: snap.summary, onClose: () => setSummaryOpen(false) }) : null,
         lastError && reminding
           ? h("div", { className: "nls-card", style: { position: "fixed", right: 26, bottom: 150, padding: "8px 12px", fontSize: 12, color: "#A33A3A" } }, `与宿主通信失败：${lastError}`)
